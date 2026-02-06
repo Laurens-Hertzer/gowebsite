@@ -1,8 +1,56 @@
-const canvas = document.getElementById("myCanvas");
-const ctx = canvas.getContext("2d");
+const svg = document.getElementById("goboard");
+const socket = new WebSocket(`wss://${location.host}`);
 
-ctx.beginPath();
-ctx.moveTo(20, 20);
-ctx.lineTo(20, 100);
-ctx.lineTo(70, 100);
-ctx.stroke();
+// Linien erzeugen
+for (let i = 0; i < 19; i++) {
+  const h = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  h.setAttribute("x1", 0);
+  h.setAttribute("y1", i);
+  h.setAttribute("x2", 18);
+  h.setAttribute("y2", i);
+  svg.appendChild(h);
+
+  const v = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  v.setAttribute("x1", i);
+  v.setAttribute("y1", 0);
+  v.setAttribute("x2", i);
+  v.setAttribute("y2", 18);
+  svg.appendChild(v);
+}
+
+socket.onmessage = (msg) => {
+  const data = JSON.parse(msg.data);
+
+  if (data.type === "update") {
+    placeStone(data.x, data.y, data.color);
+  }
+
+  if (data.type === "waiting") {
+    console.log("Warte auf Gegner…");
+  }
+
+  if (data.type === "start") {
+    console.log("Spiel gestartet, deine Farbe:", data.color);
+  }
+};
+
+svg.addEventListener("click", (e) => {
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+
+  const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+  const x = Math.round(svgP.x);
+  const y = Math.round(svgP.y);
+
+  socket.send(JSON.stringify({ type: "move", x, y }));
+});
+
+function placeStone(x, y, color) {
+  const stone = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  stone.setAttribute("cx", x);
+  stone.setAttribute("cy", y);
+  stone.setAttribute("r", 0.45);
+  stone.setAttribute("fill", color);
+  svg.appendChild(stone);
+}

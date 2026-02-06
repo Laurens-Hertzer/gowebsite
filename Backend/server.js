@@ -1,19 +1,23 @@
 const express = require("express");
 const app = express();
-const port = 3000;
 const session = require("express-session");
 /*const swaggerUi = require("swagger-ui-express");
 const swaggerDocument = require("./swagger-output.json");*/
 const cors = require("cors");
 const path = require("path");
+const gamecontrol = require("./gamecontrol");
+const server = app.listen(process.env.PORT || 3000);
+const wss = new WebSocket.Server({ server });
+
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use("/gamecontrol" , gamecontrol);
 
 //Authentifizierung
 
-const nextId = () => Math.max(...tasks.map((task) => task.id)) + 1;
+//const nextId = () => Math.max(...tasks.map((task) => task.id)) + 1;
 
 /*app.use(
   "/swagger-ui",
@@ -102,6 +106,7 @@ app.delete("/logout", (req, res) => {
     req.session.username = undefined;
     res.send("success")
 });
+
 
 
 app.listen(port, () => {

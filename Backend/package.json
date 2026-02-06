@@ -1,8 +1,36 @@
 {
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Dies ist der Server für ein online Go-Spiel.",
+  "keywords": [
+    "Go",
+    "Server"
+  ],
+  "homepage": "https://github.com/Laurens-Hertzer/gowebsite#readme",
+  "bugs": {
+    "url": "https://github.com/Laurens-Hertzer/gowebsite/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Laurens-Hertzer/gowebsite.git"
+  },
+  "license": "ISC",
+  "author": "Laurens Alexander Hertzer",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "test": "node server.js",
+    "start": "node server.js"
+  },
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
     "path": "^0.12.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "globals": "^17.3.0"
   }
 }
