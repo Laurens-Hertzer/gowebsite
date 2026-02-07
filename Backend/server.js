@@ -1,59 +1,49 @@
+//Imports
 const express = require("express");
-const app = express();
 const session = require("express-session");
-/*const swaggerUi = require("swagger-ui-express");
-const swaggerDocument = require("./swagger-output.json");*/
 const cors = require("cors");
 const path = require("path");
-const gamecontrol = require("./gamecontrol");
-const server = app.listen(process.env.PORT || 3000);
-const wss = new WebSocket.Server({ server });
+const WebSocket = require("ws")
 
-
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use("/gamecontrol" , gamecontrol);
-
-//Authentifizierung
-
-//const nextId = () => Math.max(...tasks.map((task) => task.id)) + 1;
-
+/*const swaggerUi = require("swagger-ui-express");
+const swaggerDocument = require("./swagger-output.json");*/
 /*app.use(
   "/swagger-ui",
   swaggerUi.serve,
   swaggerUi.setup(swaggerDocument)
 );*/
 
+//Definitions
+
+const app = express();
+
+//Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+//Routing
+//app.use("/gamecontrol" , gamecontrol);
+
+//Correct ID placement, needed later for correct saving of games, users, etc.
+//const nextId = () => Math.max(...tasks.map((task) => task.id)) + 1;
+
+//Authentication, Authorization
 app.use(session({
     secret: "supersecret",
     resave: false,
     saveUninitialized: true,
-    cookie: {}
-}))
+    cookie: {
+        httpOnly: true,
+        secure: false //CHANGE WENN PUBLIISHING TO TRUE
+    }
+}));
 
 const users = [
-    { username: "test", password: "1" },
-    { username: "test2", password: "294" }
-
+    { username: "test" , password: "1" },
+    { username: "test2", password: "2" },
+    { username: "test3", password: "3" }
 ]
-
-app.get('/', async (request, response) => {
-    if (!request.session.username){
-        response.sendFile(path.join(__dirname, '../Frontend', 'login.html'));
-    }else{
-        response.sendFile(path.join(__dirname, '../Frontend', 'index.html'));
-    }
-});
-
-app.get('/index.html', (req, res) => {
-    if (!req.session.username) {
-        return res.redirect('/');
-    }
-    return res.sendFile(path.join(__dirname, '../Frontend', 'index.html'));
-});
-
-app.use(express.static(path.join(__dirname, '../Frontend')));
 
 app.post("/register", (req, res) => {
     const { username, password } = req.body;
@@ -63,10 +53,11 @@ app.post("/register", (req, res) => {
     }
     if (!req.session.createdAccounts) {
         req.session.createdAccounts = 0;
-    } if (req.session.createdAccounts >= 5) {
+    } 
+    if (req.session.createdAccounts >= 5) {
         return res.status(429).json({ error: "Maximale Anzahl an Accounts erreicht, du brauchst nicht so viele." });
     }
-    users.push({ username, password });
+    users.push({... {username, password} });
     req.session.createdAccounts++;
     res.json({ message: "Account erstellt" });
 });
@@ -80,14 +71,7 @@ app.post("/login", (req, res) => {
         return res.status(401).json({ error: "no such user" });
     }
 
-    /*if (password !== "m295"){
-        return res.sendStatus(401);
-    }
-    if(!username) {
-        return res.sendStatus(422);
-    }*/
     req.session.username = req.body.username;
-
     res.json({ message: "sucess" });
 });
 
@@ -95,7 +79,7 @@ app.get("/verify", (req, res) => {
     if (req.session.username) {
         return res.send(req.session.username);
     } else {
-        return res.sendStatus(401);
+        return res.status(401).json({error: "You have to log in first."});
     }
 });
 
@@ -107,8 +91,78 @@ app.delete("/logout", (req, res) => {
     res.send("success")
 });
 
+app.get('/', (req, res) => {
+    if (!req.session.username){
+        res.sendFile(path.join(__dirname, '../Frontend', 'login.html'));
+    }else{
+        res.sendFile(path.join(__dirname, '../Frontend', 'index.html'));
+    }
+});
 
+// All static files (CSS, JS, Pictures)
+app.use(express.static(path.join(__dirname, '../Frontend')));
 
-app.listen(port, () => {
-    console.log("up n running")
+// Catch-All für SPA (anti404 when reloading)
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../Frontend/index.html")); 
+});
+
+const server = app.listen(process.env.PORT || 3000, () => {
+     console.log("up n running"); 
+});
+
+const wss = new WebSocket.Server({ server });
+
+// Matchmaking
+const waiting = [];
+
+class Game {
+    constructor() {
+        this.board = Array.from({ length: 19},  () => Array(19).fill(null));
+        this.current = "black";
+    }
+
+    playMove(x, y) {
+        if (this.board[y][x] !== null) {
+            return { ok: false, reason: "Feld besetztz"};
+        }
+
+        const color = this.current;
+        this.board[y][x] = color;
+        this.current = this.current === "black" ? "white" : "black";
+        return { ok: true, color };
+    }
+}
+
+// WebSocket Handling
+
+wss.on("connection", (ws) => {
+    if (waiting.length === 0) {
+        waiting.push(ws);
+        ws.send(JSON.stringify({ type: "waiting" }));
+    }else{
+        const opponent = waiting.shift();
+        const game = new Game();
+
+        ws.game = game;
+        opponent.game = game;
+
+        game.players = [ws, opponent];
+
+        ws.send(JSON.stringify({ type: "start", color: "black" }));
+        opponent.send(JSON.stringify({ type: "start", color: "white" }));
+    }
+ws.on("message", (msg) => { 
+    const data = JSON.parse(msg); 
+    if (data.type === "move") {
+         const result = ws.game.playMove(data.x, data.y); 
+         if (!result.ok) return; 
+         
+         ws.game.players.forEach(p => 
+            p.send(JSON.stringify({ type: "update", x: data.x, y: data.y, color: result.color 
+
+            })) 
+        ); 
+    } 
+}); 
 });
