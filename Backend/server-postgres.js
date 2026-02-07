@@ -1,6 +1,8 @@
 //Imports
 const express = require("express");
 const session = require("express-session");
+const pgSession = require("connect-pg-simple")(session);
+const { Pool } = require("pg");
 const cors = require("cors");
 const path = require("path");
 const WebSocket = require("ws")
@@ -16,6 +18,11 @@ const swaggerDocument = require("./swagger-output.json");*/
 //Definitions
 
 const app = express();
+
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
 //Middleware
 app.use(cors({
