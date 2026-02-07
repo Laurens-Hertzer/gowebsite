@@ -6,7 +6,7 @@ const { Pool } = require("pg");
 const cors = require("cors");
 const path = require("path");
 const WebSocket = require("ws")
-
+const bcrypt = require("bcrypt");
 
 //Definitions
 const app = express();
@@ -54,12 +54,13 @@ async function initDatabase() {
 
 initDatabase();
 
-//Middleware
+// CORS-Config
 app.use(cors({
     origin: true,
     credentials: true
 }));
 
+//Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -96,7 +97,6 @@ app.post("/register", async(req, res) => {
     }
 
     try {
-        // Prüfe ob Username bereits existiert
         const existingUser = await pool.query(
             'SELECT id FROM users WHERE username = $1',
             [username]
@@ -106,10 +106,8 @@ app.post("/register", async(req, res) => {
             return res.status(409).json({ error: "Username bereits vergeben" });
         }
 
-        // Hash Passwort
         const passwordHash = await bcrypt.hash(password, 10);
 
-        // Speichere User in DB
         await pool.query(
             'INSERT INTO users (username, password_hash) VALUES ($1, $2)',
             [username, passwordHash]
@@ -131,11 +129,11 @@ app.post("/login", async(req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT id, password_hash FROM users WHERE username = $1',
+            'SELECT id, username,password_hash FROM users WHERE username = $1',
             [username]
         );
 
-        if (result.rows.lenght === 0) {
+        if (result.rows.length === 0) {
             return res.status(401).json({ error: "Wrong username or password" });
         }
 
@@ -159,7 +157,7 @@ app.post("/login", async(req, res) => {
 
 app.get("/verify", (req, res) => {
     if (req.session.username) {
-        return res.send(req.session.username);
+        return res.send({username: req.session.username});
     } else {
         return res.status(401).json({error: "You have to log in first."});
     }
@@ -190,7 +188,7 @@ app.use(express.static(path.join(__dirname, '../Frontend')));
 
 // Catch-All for SPA (anti404 when reloading)
 app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../Frontend/index.html")); 
+    res.sendFile(path.join(__dirname, "../Frontend/login.html")); 
 });
 
 const server = app.listen(process.env.PORT || 3000, () => {
