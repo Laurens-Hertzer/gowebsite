@@ -129,7 +129,7 @@ app.post("/login", async(req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT id, username,password_hash FROM users WHERE username = $1',
+            'SELECT id, username, password_hash FROM users WHERE username = $1',
             [username]
         );
 
@@ -199,7 +199,7 @@ const wss = new WebSocket.Server({ server });
 
 // Matchmaking
 const games = [];
-const waiting = [];
+//const waiting = [];
 
 class Game {
     constructor(ws) {
@@ -233,7 +233,7 @@ wss.on("connection", (ws) => {
                 games.push(game);
                 ws.currentGame = game;
 
-                broadcastGameList();
+                broadcastGamesList();
             }
 
            if (data.action === "join") {
