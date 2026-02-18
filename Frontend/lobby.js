@@ -26,6 +26,8 @@ socket.onmessage = (event) => {
         
         if (data.type === 'start') {
             console.log('You start as', data.color);
+            sessionStorage.setItem("gameId", data.gameId); 
+            sessionStorage.setItem("color", data.color);
             window.location.href = 'game.html';
         }
         

@@ -33,7 +33,7 @@ socket.onopen = () => {
       color: myColor
     }));
   } else {
-    console.error('❌ Keine gameId oder color gespeichert!');
+    console.error(' Keine gameId oder color gespeichert!');
     alert('Fehler: Keine Spiel-Information gefunden. Zurück zur Lobby.');
     window.location.href = 'lobby.html';
   }
