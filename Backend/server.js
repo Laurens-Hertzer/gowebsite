@@ -204,7 +204,7 @@ let gameIdCounter = 0;
 
 class Game {
     constructor(ws) {
-        this.id = 'game_${gameIdCounter++}';
+        this.id = `game_${gameIdCounter++}`;
         this.player1 = ws;
         this.player2 = null;
         this.board = Array.from({ length: 19},  () => Array(19).fill(null));
