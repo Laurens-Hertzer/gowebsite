@@ -251,9 +251,14 @@ wss.on("connection", (ws) => {
         }
 
             if (data.type === "move") {
-                const game = ws.currentGame;
+                
                 if (!ws.currentGame) return;  
+
+                const game = ws.currentGame;
+
                 if (!game.player2) return;
+
+
                 const result = game.playMove(data.x, data.y);
 
                 if (!result.ok) return;
@@ -268,7 +273,9 @@ wss.on("connection", (ws) => {
                 if(game.player1 && game.player1.readyState === WebSocket.OPEN) {
                     game.player1.send(moveData);
                 }
-                if (game.player2) game.player2.send(moveData);
+                if (game.player2 && game.player2.readyState === WebSocket.OPEN) {
+                    game.player2.send(moveData);
+                }
             }
 
     } catch (err) {
