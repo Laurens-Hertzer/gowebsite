@@ -287,38 +287,34 @@ wss.on("connection", (ws) => {
                     game.player2.send(moveData);
                 }
             }
-            if (data.type === "rejoin") {
-                console.log("🔄 Rejoin-Versuch für gameId:", data.gameId, "color:", data.color);
-    console.log("📊 Alle Spiele:", games.map(g => ({ id: g.id, hasP1: !!g.player1, hasP2: !!g.player2 })));
+if (data.type === "rejoin") {
+    console.log("🔄 Rejoin-Versuch für gameId:", data.gameId, "color:", data.color);
     
     const game = games.find(g => g.id === data.gameId);
-
+    
     if (!game) {
-        console.log("❌ Rejoin: Game not found", data.gameId);
+        console.log("❌ Game not found:", data.gameId);
         ws.send(JSON.stringify({ 
             type: "error", 
             message: "Spiel nicht mehr verfügbar" 
         }));
         return;
     }
-
-    // Spieler anhand der Farbe zuordnen
-    if (data.color === "black") {
-        console.log("🔄 Replacing player1 (black)");
-        game.player1 = ws;
-    } else if (data.color === "white") {
-        console.log("🔄 Replacing player2 (white)");
-        game.player2 = ws;
-    }
-
-    ws.currentGame = game;
-
-    console.log("✅ Player rejoined game:", data.gameId, "as", data.color);
     
-    // WICHTIG: Sende Bestätigung zurück!
-    ws.send(JSON.stringify({ type: "rejoin_success" }));
+    // Spieler zurücksetzen UND Disconnect-Flag entfernen
+    if (data.color === "black") {
+        game.player1 = ws;
+        game.player1Disconnected = false;  // ← NEU
+        console.log("✅ Black player rejoined");
+    } else if (data.color === "white") {
+        game.player2 = ws;
+        game.player2Disconnected = false;  // ← NEU
+        console.log("✅ White player rejoined");
     }
-
+    
+    ws.currentGame = game;
+    ws.send(JSON.stringify({ type: "rejoin_success" }));
+}
 
     } catch (err) {
         console.error("Fehler beim Verarbeiten der Nachricht:", err);
@@ -326,16 +322,28 @@ wss.on("connection", (ws) => {
 }); 
 
 ws.on("close", () => {
+    console.log("🔌 WebSocket geschlossen");
+    
+    for (let i = games.length - 1; i >= 0; i--) {
+        const game = games[i];
         
-        for (let i = games.length - 1; i >= 0; i--) {
-            if (games[i].player1 === ws || games[i].player2 === ws) {
-                console.log("Deleting Game", i);
-                games.splice(i, 1);
-            }
+        if (game.player1 === ws) {
+            console.log("⏸️ Player 1 disconnected from game", game.id);
+            game.player1Disconnected = true;
+        }
+        if (game.player2 === ws) {
+            console.log("⏸️ Player 2 disconnected from game", game.id);
+            game.player2Disconnected = true;
         }
         
-        broadcastGamesList();
-    });
+        // Lösche Spiel nur wenn BEIDE weg sind
+        if (game.player1Disconnected && game.player2Disconnected) {
+            console.log("🗑️ Deleting game", game.id, "(both players gone)");
+            games.splice(i, 1);
+        }
+    }
+    
+    broadcastGamesList();
 });
 
 function sendGamesList(ws) {
