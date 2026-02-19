@@ -323,27 +323,28 @@ if (data.type === "rejoin") {
 
 ws.on("close", () => {
     console.log("🔌 WebSocket geschlossen");
-    
+
     for (let i = games.length - 1; i >= 0; i--) {
         const game = games[i];
         
         if (game.player1 === ws) {
             console.log("⏸️ Player 1 disconnected from game", game.id);
             game.player1Disconnected = true;
-        }
+        };
         if (game.player2 === ws) {
             console.log("⏸️ Player 2 disconnected from game", game.id);
             game.player2Disconnected = true;
-        }
+        };
         
         // Lösche Spiel nur wenn BEIDE weg sind
         if (game.player1Disconnected && game.player2Disconnected) {
             console.log("🗑️ Deleting game", game.id, "(both players gone)");
             games.splice(i, 1);
-        }
-    }
+        };
+    };
     
     broadcastGamesList();
+});
 });
 
 function sendGamesList(ws) {
