@@ -288,23 +288,35 @@ wss.on("connection", (ws) => {
                 }
             }
             if (data.type === "rejoin") {
-            const game = games.find(g => g.id === data.gameId);
+                console.log("🔄 Rejoin-Versuch für gameId:", data.gameId, "color:", data.color);
+    console.log("📊 Alle Spiele:", games.map(g => ({ id: g.id, hasP1: !!g.player1, hasP2: !!g.player2 })));
+    
+    const game = games.find(g => g.id === data.gameId);
 
-            if (!game) {
-                console.log("Rejoin: Game not found", data.gameId);
-                return;
-            }
+    if (!game) {
+        console.log("❌ Rejoin: Game not found", data.gameId);
+        ws.send(JSON.stringify({ 
+            type: "error", 
+            message: "Spiel nicht mehr verfügbar" 
+        }));
+        return;
+    }
 
-            // Spieler anhand der Farbe zuordnen
-            if (data.color === "black") {
-                game.player1 = ws;
-            } else if (data.color === "white") {
-                game.player2 = ws;
-            }
+    // Spieler anhand der Farbe zuordnen
+    if (data.color === "black") {
+        console.log("🔄 Replacing player1 (black)");
+        game.player1 = ws;
+    } else if (data.color === "white") {
+        console.log("🔄 Replacing player2 (white)");
+        game.player2 = ws;
+    }
 
-            ws.currentGame = game;
+    ws.currentGame = game;
 
-            console.log("Player rejoined game:", data.gameId, "as", data.color);
+    console.log("✅ Player rejoined game:", data.gameId, "as", data.color);
+    
+    // WICHTIG: Sende Bestätigung zurück!
+    ws.send(JSON.stringify({ type: "rejoin_success" }));
     }
 
 
