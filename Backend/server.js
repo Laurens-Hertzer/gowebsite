@@ -54,18 +54,8 @@ async function initDatabase() {
 
 initDatabase();
 
-// CORS-Config
-app.use(cors({
-    origin: true,
-    credentials: true
-}));
-
-//Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 //Authentication, Authorization
-app.use(session({
+const sessionMiddleware = session({
     store: new pgSession({
         pool: pool,
         tableName: 'session',
@@ -79,8 +69,26 @@ app.use(session({
         secure: process.env.NODE_ENV === 'production', // Auto true in Render
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Cross-Origin
         maxAge: 24 * 60 * 60 * 1000 // 24h
-    }
+    },
+});
+
+// CORS-Config
+app.use(cors({
+    origin: process.env.ALLOWED_ORIGIN || "http://localhost:3000",
+    credentials: true
 }));
+
+//Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(sessionMiddleware);
+
+function requireAuthentication(req, res, next) {
+    if (!req.session.userId) {
+        return res.status(401).json({ error: "Nicht eingeloggt" });
+    }
+    next();
+}
 
 app.post("/register", async(req, res) => {
     const { username, password } = req.body;
@@ -92,19 +100,17 @@ app.post("/register", async(req, res) => {
     if (username.length < 3) {
         return res.status(422).json({ error: "Username has to be bigger then 3 letters." });
     }
-    if (password.length < 1) {
+    if (password.length < 8) {
         return res.status(422).json({ error: "Passwort too short, not so difficult to remember a bigger one, I trust u ;)." });
     }
 
     try {
-        const existingUser = await pool.query(
-            'SELECT id FROM users WHERE username = $1',
-            [username]
-        );
-
-        if (existingUser.rows.length > 0) {
+        const existingUser = await pool.query('SELECT id FROM users WHERE username = $1',[username]);
+            if (existingUser.rows.length > 0) {
             return res.status(409).json({ error: "Username bereits vergeben" });
         }
+
+       
 
         const passwordHash = await bcrypt.hash(password, 10);
 
@@ -183,6 +189,14 @@ app.get('/', (req, res) => {
     }
 });
 
+app.get("/lobby.html", requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, "../Frontend", "lobby.html"));
+});
+
+app.get("/game.html", requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, "../Frontend", "game.html"));
+});
+
 // All static files (CSS, JS, Pictures)
 app.use(express.static(path.join(__dirname, '../Frontend')));
 
@@ -192,184 +206,233 @@ app.get("*", (req, res) => {
 });
 
 const server = app.listen(process.env.PORT || 3000, () => {
-     console.log("up n running"); 
+    console.log("[Server] Running on port", process.env.PORT || 3000);
 });
 
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ noServer: true });
 
 // Matchmaking
-const games = [];
+const games = new Map(); //Map anstelle von Array wegen besseren Idhandling
 let gameIdCounter = 0;
-//const waiting = [];
 
 class Game {
-    constructor(ws) {
+    constructor(creatorWs) {
         this.id = `game_${gameIdCounter++}`;
-        this.player1 = ws;
+
+        this.player1 = creatorWs;
+        this.player1Id = creatorWs.userId;
+
         this.player2 = null;
+        this.player2Id = null;
+
+        this.player1Disconnected = false;
+        this.player2Disconnected = false;
+        this.deleteTimeout = null;
+
         this.board = Array.from({ length: 19},  () => Array(19).fill(null));
-        this.current = "black";
+        this.current = "black"; //in go black starts btw
+    }
+
+    getColor(ws) {
+        if (ws.userId === this.player1Id) return "black";
+        if (ws.userId === this.player2Id) return "white";
+        return null;
     }
 
     playMove(x, y) {
+        if (x < 0 || x > 18 || y < 0 || y > 18) {
+            return { ok: false, reason: "Ungültige Koordinaten"};
+        }
+
+        const color = this.getColor(ws);
+        if (color !== this.current) {
+            return { ok: false, reason: "Not your turn." };
+        }
+
         if (this.board[y][x] !== null) {
             return { ok: false, reason: "Feld besetztz"};
         }
 
-        const color = this.current;
+        
         this.board[y][x] = color;
         this.current = this.current === "black" ? "white" : "black";
         return { ok: true, color };
     }
 }
 
-// WebSocket Handling
 wss.on("connection", (ws) => {
+    console.log("[WS] User connected:", ws.username);
     sendGamesList(ws);
 
-    ws.on("message", (msg) => { 
+    ws.on("message", (msg) => {
+        let data;
         try {
-            const data = JSON.parse(msg);
-            if (data.action === "create") {
-                const game = new Game(ws);
-                games.push(game);
-                ws.currentGame = game;
-
-                broadcastGamesList();
-            }
-
-           if (data.action === "join") {
-                const game = games[data.gameIndex];
-
-                if (game && !game.player2 && game.player1 !== ws) {
-                    game.player2 = ws;
-                    ws.currentGame = game;
-                    
-                    game.player1.send(JSON.stringify({
-                         type: "start", 
-                         color: "black",
-                         gameId: game.id 
-                        }));
-                    game.player2.send(JSON.stringify({
-                         type: "start",
-                        color: "white",
-                        gameId: game.id
-                     }));
-
-                    broadcastGamesList();
-            }
+            data = JSON.parse(msg);
+        } catch {
+            console.warn("[WS] Invalid JSON from:", ws.username);
+            return;
         }
 
-            if (data.type === "move") {
-                
-                if (!ws.currentGame) return;  
-
-                const game = ws.currentGame;
-
-                if (!game.player2) return;
-
-
-                const result = game.playMove(data.x, data.y);
-
-                if (!result.ok) return;
-
-                const moveData = JSON.stringify({
-                    type: "update",
-                    x: data.x,
-                    y: data.y,
-                    color: result.color
-                });
-
-                if(game.player1 && game.player1.readyState === WebSocket.OPEN) {
-                    game.player1.send(moveData);
-                }
-                if (game.player2 && game.player2.readyState === WebSocket.OPEN) {
-                    game.player2.send(moveData);
-                }
+        // ── CREATE GAME ──────────────────────────────────────
+        if (data.action === "create") {
+            // One game per user at a time
+            if (ws.currentGame) {
+                ws.send(JSON.stringify({ type: "error", message: "You are already in a game." }));
+                return;
             }
-if (data.type === "rejoin") {
-    console.log("🔄 Rejoin-Versuch für gameId:", data.gameId, "color:", data.color);
-    
-    const game = games.find(g => g.id === data.gameId);
-    
-    if (!game) {
-        console.log("❌ Game not found:", data.gameId);
-        ws.send(JSON.stringify({ 
-            type: "error", 
-            message: "Spiel nicht mehr verfügbar" 
-        }));
-        return;
-    }
-    
-    // Spieler zurücksetzen UND Disconnect-Flag entfernen
-    if (data.color === "black") {
-        game.player1 = ws;
-        game.player1Disconnected = false;  // ← NEU
-        console.log("✅ Black player rejoined");
-    } else if (data.color === "white") {
-        game.player2 = ws;
-        game.player2Disconnected = false;  // ← NEU
-        console.log("✅ White player rejoined");
-    }
-    
-    ws.currentGame = game;
-    ws.send(JSON.stringify({ type: "rejoin_success" }));
+
+            const game = new Game(ws);
+            games.set(game.id, game);
+            ws.currentGame = game;
+
+            console.log("[Game] Created:", game.id, "by", ws.username);
+            broadcastGamesList();
+        }
+
+        // ── JOIN GAME ────────────────────────────────────────
+        if (data.action === "join") {
+            const game = games.get(data.gameId); // lookup by ID, not index
+
+            if (!game) {
+                ws.send(JSON.stringify({ type: "error", message: "Game not found." }));
+                return;
+            }
+            if (game.player2) {
+                ws.send(JSON.stringify({ type: "error", message: "Game is full." }));
+                return;
+            }
+            if (game.player1Id === ws.userId) {
+                ws.send(JSON.stringify({ type: "error", message: "You cannot join your own game." }));
+                return;
+            }
+
+            game.player2 = ws;
+            game.player2Id = ws.userId;
+            ws.currentGame = game;
+
+            game.player1.send(JSON.stringify({ type: "start", color: "black", gameId: game.id }));
+            game.player2.send(JSON.stringify({ type: "start", color: "white", gameId: game.id }));
+
+            console.log("[Game] Started:", game.id);
+            broadcastGamesList();
+        }
+
+        // ── MOVE ─────────────────────────────────────────────
+        if (data.type === "move") {
+            if (!ws.currentGame) return;
+
+            const game = ws.currentGame;
+            if (!game.player2) return; // game hasn't started yet
+
+            const result = game.playMove(data.x, data.y, ws);
+
+            if (!result.ok) {
+                ws.send(JSON.stringify({ type: "error", message: result.reason }));
+                return;
+            }
+
+            const moveData = JSON.stringify({
+                type: "update",
+                x: data.x,
+                y: data.y,
+                color: result.color,
+            });
+
+            if (game.player1?.readyState === WebSocket.OPEN) game.player1.send(moveData);
+            if (game.player2?.readyState === WebSocket.OPEN) game.player2.send(moveData);
+        }
+
+        // ── REJOIN ───────────────────────────────────────────
+        if (data.type === "rejoin") {
+            const game = games.get(data.gameId);
+
+            if (!game) {
+                ws.send(JSON.stringify({ type: "error", message: "Game no longer available." }));
+                return;
+            }
+
+            // Check this user actually belongs to this game
+            const color = game.getColor(ws); // uses ws.userId
+            if (!color) {
+                console.warn("[WS] Unauthorized rejoin attempt by", ws.username, "for game", data.gameId);
+                ws.send(JSON.stringify({ type: "error", message: "You are not part of this game." }));
+                return;
+            }
+
+            // Cancel the delete timeout if it was set
+            if (game.deleteTimeout) {
+                clearTimeout(game.deleteTimeout);
+                game.deleteTimeout = null;
+            }
+
+            if (color === "black") {
+                game.player1 = ws;
+                game.player1Disconnected = false;
+            } else {
+                game.player2 = ws;
+                game.player2Disconnected = false;
+            }
+
+            ws.currentGame = game;
+            console.log("[Game] Rejoined:", game.id, "as", color, "by", ws.username);
+            ws.send(JSON.stringify({ type: "rejoin_success", color }));
+        }
+    });
+
+    // ── DISCONNECT ───────────────────────────────────────────
+    ws.on("close", () => {
+        console.log("[WS] User disconnected:", ws.username);
+
+        games.forEach((game, id) => {
+            if (game.player1 === ws) {
+                game.player1Disconnected = true;
+                game.player1 = null;
+            }
+            if (game.player2 === ws) {
+                game.player2Disconnected = true;
+                game.player2 = null;
+            }
+
+            // Only delete the game if BOTH players are gone,
+            // and give them 30 seconds to rejoin first
+            if (game.player1Disconnected && game.player2Disconnected) {
+                game.deleteTimeout = setTimeout(() => {
+                    games.delete(id);
+                    console.log("[Game] Deleted after timeout:", id);
+                    broadcastGamesList();
+                }, 30000); // 30 seconds grace period
+            }
+        });
+
+        broadcastGamesList();
+    });
+});
+
+// ============================================================
+// HELPERS
+// ============================================================
+function getGamesListPayload() {
+    const list = [];
+    games.forEach((game, id) => {
+        list.push({
+            gameId: id, // send ID not index — frontend uses this for join
+            player1: game.player1Id ? game.player1?.username || "Reconnecting..." : null,
+            player2: game.player2Id ? game.player2?.username || "Reconnecting..." : null,
+        });
+    });
+    return list;
 }
-
-    } catch (err) {
-        console.error("Fehler beim Verarbeiten der Nachricht:", err);
-    }
-}); 
-
-ws.on("close", () => {
-    console.log("🔌 WebSocket geschlossen");
-
-    for (let i = games.length - 1; i >= 0; i--) {
-        const game = games[i];
-        
-        if (game.player1 === ws) {
-            console.log("⏸️ Player 1 disconnected from game", game.id);
-            game.player1Disconnected = true;
-        };
-        if (game.player2 === ws) {
-            console.log("⏸️ Player 2 disconnected from game", game.id);
-            game.player2Disconnected = true;
-        };
-        
-        // Lösche Spiel nur wenn BEIDE weg sind
-        if (game.player1Disconnected && game.player2Disconnected) {
-            console.log("🗑️ Deleting game", game.id, "(both players gone)");
-            games.splice(i, 1);
-        };
-    };
-    
-    broadcastGamesList();
-});
-});
 
 function sendGamesList(ws) {
-    const gamesList = games.map(g => ({
-        player1: g.player1 ? 'Spieler' : null,
-        player2: g.player2 ? 'Spieler' : null
-    }));
-    
-    ws.send(JSON.stringify({ games: gamesList }));
+    ws.send(JSON.stringify({ games: getGamesListPayload() }));
 }
 
-// Sende Spieleliste an ALLE Clients
 function broadcastGamesList() {
-    const gamesList = games.map(g => ({
-        player1: g.player1 ? 'Spieler' : null,
-        player2: g.player2 ? 'Spieler' : null
-    }));
-    
-    const message = JSON.stringify({ games: gamesList });
-    
-    wss.clients.forEach(client => {
+    const message = JSON.stringify({ games: getGamesListPayload() });
+    wss.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(message);
         }
     });
-    
-    console.log("📤 Spieleliste gesendet:", gamesList.length, "Spiele");
+    console.log("[WS] Games list broadcast:", games.size, "games");
 }

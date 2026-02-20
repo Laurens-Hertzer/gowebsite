@@ -1,0 +1,84 @@
+const game_list = document.getElementById("game-list");
+const create_game_btn = document.getElementById("create-game-btn");
+
+let socket;
+
+window.addEventListener('DOMContentLoaded', () => {
+    connectWebSocket();
+});
+
+function connectWebSocket() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(`${protocol}//${location.host}`);
+    
+    socket.onopen = () => {
+    console.log('WebSocket connected');
+};
+socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.games) {
+            renderGameList(data.games);
+        }
+        
+        if (data.type === 'start') {
+            console.log('You start as', data.color);
+            sessionStorage.setItem("gameId", data.gameId); 
+            sessionStorage.setItem("myColor", data.color);
+            window.location.href = 'game.html';
+        }
+        
+        if (data.type === 'error') {
+            console.error('Error from server:', data.message);
+            alert('Error: ' + data.message);
+        }
+    };
+
+    socket.onerror = () => {
+        console.error('WebSocket Error 😩');
+    };
+
+    socket.onclose = () => {
+        console.log('WebSocket closed');
+        
+    };
+}
+
+function renderGameList(games) {
+    if (games.length === 0) {
+        gameList.innerHTML = "<li>No games yet. Create one!</li>";
+        return;
+    }
+
+    gameList.innerHTML = games
+        .map(
+            (game, index) => `
+        <li>
+            <span>Game ${index + 1}: ${game.player1 || "Waiting..."} ${game.player2 ? "vs " + game.player2 : ""}</span>
+            ${
+                !game.player2
+                    ? `<button onclick="joinGame('${game.gameId}')">Join</button>`
+                    : "<span>Full</span>"
+            }
+        </li>
+    `
+        )
+        .join("");
+}
+
+// ── ACTIONS ───────────────────────────────────────────────────
+createGameBtn.addEventListener("click", () => {
+    if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ action: "create" }));
+        console.log("[Game] Requesting new game");
+    } else {
+        console.error("[WS] Not connected");
+    }
+});
+
+function joinGame(gameId) {
+    if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ action: "join", gameId }));
+        console.log("[Game] Joining game:", gameId);
+    }
+}
