@@ -83,7 +83,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(sessionMiddleware);
 
-function requireAuthentication(req, res, next) {
+function requireAuth(req, res, next) {
     if (!req.session.userId) {
         return res.status(401).json({ error: "Nicht eingeloggt" });
     }
