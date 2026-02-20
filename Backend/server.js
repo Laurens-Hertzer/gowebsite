@@ -259,7 +259,7 @@ class Game {
         return null;
     }
 
-    playMove(x, y) {
+    playMove(x, y, ws) {
         if (x < 0 || x > 18 || y < 0 || y > 18) {
             return { ok: false, reason: "Ungültige Koordinaten"};
         }
