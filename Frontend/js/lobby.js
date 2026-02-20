@@ -1,9 +1,16 @@
-const game_list = document.getElementById("game-list");
-const create_game_btn = document.getElementById("create-game-btn");
-
 let socket;
+let gameList;
+let createGameBtn;
 
 window.addEventListener('DOMContentLoaded', () => {
+    gameList = document.getElementById("game-list");
+    createGameBtn = document.getElementById("create-game-btn");
+
+    createGameBtn.addEventListener("click", () => {
+        if (socket?.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ action: "create" }));
+        }
+    });
     connectWebSocket();
 });
 
@@ -67,14 +74,6 @@ function renderGameList(games) {
 }
 
 // ── ACTIONS ───────────────────────────────────────────────────
-createGameBtn.addEventListener("click", () => {
-    if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ action: "create" }));
-        console.log("[Game] Requesting new game");
-    } else {
-        console.error("[WS] Not connected");
-    }
-});
 
 function joinGame(gameId) {
     if (socket?.readyState === WebSocket.OPEN) {

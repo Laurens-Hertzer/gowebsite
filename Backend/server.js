@@ -1,4 +1,5 @@
 //Imports
+require("dotenv").config({ path: require("path").join(__dirname, "../.env") });
 const express = require("express");
 const session = require("express-session");
 const pgSession = require("connect-pg-simple")(session);
@@ -14,7 +15,7 @@ const app = express();
 //DB
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
 });
 
 async function initDatabase() {
